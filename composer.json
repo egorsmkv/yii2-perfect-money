@@ -1,5 +1,5 @@
 {
-  "name": "yii-dream-team/yii2-perfect-money",
+  "name": "egorsmkv-packagist/yii2-perfect-money",
   "description": "PerfectMoney component for Yii2",
   "type": "yii2-extension",
   "license": "MIT",
@@ -9,12 +9,18 @@
     "payment",
     "perfectmoney"
   ],
-  "homepage": "http://yiidreamteam.com/yii2/perfect-money",
+  "homepage": "https://github.com/egorsmkv/yii2-perfect-money",
   "authors": [
     {
       "name": "Alexey Samoylov",
       "email": "alexey.samoylov@gmail.com",
       "homepage": "http://yiidreamteam.com/team/alexey",
+      "role": "Developer"
+    },
+    {
+      "name": "Yehor Smoliakov",
+      "email": "egorsmkv@gmail.com",
+      "homepage": "https://github.com/egorsmkv",
       "role": "Developer"
     }
   ],
