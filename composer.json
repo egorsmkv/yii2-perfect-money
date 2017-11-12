@@ -25,8 +25,7 @@
     }
   ],
   "support": {
-    "issues": "https://github.com/yii-dream-team/yii2-perfect-money/issues",
-    "source": "https://github.com/yii-dream-team/yii2-perfect-money"
+    "source": "https://github.com/egorsmkv/yii2-perfect-money"
   },
   "minimum-stability": "dev",
   "require": {
