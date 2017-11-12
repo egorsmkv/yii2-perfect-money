@@ -1,29 +1,40 @@
 <?php
-/**
- * @author Alexey Samoylov <alexey.samoylov@gmail.com>
- */
 
 namespace yiidreamteam\perfectmoney;
 
+use Yii;
+use yii\base\Component;
 use yii\helpers\ArrayHelper;
 use yii\helpers\Url;
 use yii\helpers\VarDumper;
 use yii\web\ForbiddenHttpException;
 use yii\web\HttpException;
+
+use yii\httpclient\Response;
+use yii\httpclient\Client;
+
 use yiidreamteam\perfectmoney\events\GatewayEvent;
 
-class Api extends \yii\base\Component
+/**
+ * @author Alexey Samoylov <alexey.samoylov@gmail.com>
+ */
+class Api extends Component
 {
     /** @var string Account ID */
     public $accountId;
+
     /** @var string Account password */
     public $accountPassword;
+
     /** @var string Wallet number (e.g. U123456) */
     public $walletNumber;
+
     /** @var string Wallet currency (e.g. USD) */
     public $walletCurrency = 'USD';
+
     /** @var string Secret string from the PM settings page */
     public $alternateSecret;
+
     /** @var string Merchant name to display in payment form */
     public $merchantName;
 
@@ -35,11 +46,11 @@ class Api extends \yii\base\Component
 
     public function init()
     {
-        assert(isset($this->accountId));
-        assert(isset($this->accountPassword));
-        assert(isset($this->walletNumber));
-        assert(isset($this->alternateSecret));
-        assert(isset($this->merchantName));
+        assert($this->accountId !== null);
+        assert($this->accountPassword !== null);
+        assert($this->walletNumber !== null);
+        assert($this->alternateSecret !== null);
+        assert($this->merchantName !== null);
 
         $this->resultUrl = Url::to($this->resultUrl, true);
         $this->successUrl = Url::to($this->successUrl, true);
@@ -67,11 +78,13 @@ class Api extends \yii\base\Component
             'PAY_IN' => 1,
         ];
 
-        if (strlen($paymentId))
+        if (mb_strlen($paymentId) > 0) {
             $params['PAYMENT_ID'] = $paymentId;
+        }
 
-        if (strlen($memo))
+        if (mb_strlen($memo) > 0) {
             $params['Memo'] = $memo;
+        }
 
         return $this->call('confirm', $params);
     }
@@ -81,31 +94,49 @@ class Api extends \yii\base\Component
      *
      * @param string $script Api script name
      * @param array $params Request parameters
+     *
      * @return array|bool
      */
-    public function call($script, $params = [])
+    public function call($script, array $params = [])
     {
         $defaults = [
             'AccountID' => $this->accountId,
             'PassPhrase' => $this->accountPassword,
         ];
 
-        $httpParams = http_build_query(ArrayHelper::merge($defaults, $params));
-        $scriptUrl = "https://perfectmoney.is/acct/{$script}.asp?{$httpParams}";
+        $params = ArrayHelper::merge($defaults, $params);
 
-        $queryResult = @file_get_contents($scriptUrl);
+        $client = new Client();
+        /** @var Response $response */
+        $response = $client->createRequest()
+            ->setMethod('post')
+            ->setUrl(sprintf('https://perfectmoney.is/acct/%s.asp', $script))
+            ->setData($params)
+            ->send();
 
-        if ($queryResult === false)
-            return false;
+        if ($response->isOk) {
+            $content = $response->getContent();
 
-        if (!preg_match_all("/<input name='(.*)' type='hidden' value='(.*)'>/", $queryResult, $items, PREG_SET_ORDER))
-            return false;
+            $items = [];
+            if (!preg_match_all("/<input name='(.*)' type='hidden' value='(.*)'>/", $content, $items, PREG_SET_ORDER)) {
+                return false;
+            }
 
-        $result = [];
-        foreach ($items as $item)
-            $result[$item[1]] = $item[2];
+            $result = [];
+            foreach ($items as $item) {
+                if (count($item) !== 3) {
+                    continue;
+                }
 
-        return $result;
+                $result[$item[1]] = $item[2];
+            }
+
+            return $result;
+        }
+
+        Yii::error('API call returned status code: ' . $response->statusCode, 'PerfectMoney');
+
+        return false;
     }
 
     /**
@@ -120,28 +151,33 @@ class Api extends \yii\base\Component
 
     /**
      * @param array $data
+     *
      * @return bool
+     *
      * @throws HttpException
+     * @throws \yii\web\ForbiddenHttpException
      * @throws \yii\db\Exception
      */
     public function processResult($data)
     {
-        if (!$this->checkHash($data))
+        if (!$this->checkHash($data)) {
             throw new ForbiddenHttpException('Hash error');
+        }
 
         $event = new GatewayEvent(['gatewayData' => $data]);
 
         $this->trigger(GatewayEvent::EVENT_PAYMENT_REQUEST, $event);
-        if (!$event->handled)
+        if (!$event->handled) {
             throw new HttpException(503, 'Error processing request');
+        }
 
-        $transaction = \Yii::$app->getDb()->beginTransaction();
+        $transaction = Yii::$app->getDb()->beginTransaction();
         try {
             $this->trigger(GatewayEvent::EVENT_PAYMENT_SUCCESS, $event);
             $transaction->commit();
         } catch (\Exception $e) {
-            $transaction->rollback();
-            \Yii::error('Payment processing error: ' . $e->getMessage(), 'PerfectMoney');
+            $transaction->rollBack();
+            Yii::error('Payment processing error: ' . $e->getMessage(), 'PerfectMoney');
             throw new HttpException(503, 'Error processing request');
         }
 
@@ -152,6 +188,7 @@ class Api extends \yii\base\Component
      * Return result of checking SCI hash
      *
      * @param array $data Request array to check, usually $_POST
+     *
      * @return bool
      */
     public function checkHash($data)
@@ -164,8 +201,9 @@ class Api extends \yii\base\Component
             $data['PAYER_ACCOUNT'],
             $data['TIMESTAMPGMT'],
             $data['V2_HASH'])
-        )
+        ) {
             return false;
+        }
 
         $params = [
             $data['PAYMENT_ID'],
@@ -180,10 +218,12 @@ class Api extends \yii\base\Component
 
         $hash = strtoupper(md5(implode(':', $params)));
 
-        if ($hash == $data['V2_HASH'])
+        if ($hash === $data['V2_HASH']) {
             return true;
+        }
 
-        \Yii::error('Hash check failed: ' . VarDumper::dumpAsString($params), 'PerfectMoney');
+        Yii::error('Hash check failed: ' . VarDumper::dumpAsString($params), 'PerfectMoney');
+
         return false;
     }
 }
